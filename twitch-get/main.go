@@ -1,11 +1,37 @@
 package main
 
 import (
-	"os"
+	"fmt"
 	"github.com/cydev/twitch/api"
+	"github.com/grafov/m3u8"
 	"log"
 	"net/http"
-	"io"
+	"os"
+	"time"
+)
+
+func getToSTDOUT(uri string) {
+	res, err := http.Get(uri)
+	if err != nil {
+		log.Println("GET", uri, err)
+	}
+	defer res.Body.Close()
+	p, _, err := m3u8.DecodeFrom(res.Body, true)
+	if err != nil {
+		log.Fatal(err)
+	}
+	switch p := p.(type) {
+	case *m3u8.MediaPlaylist:
+		{
+			fmt.Println(p)
+		}
+	default:
+		fmt.Println("wtf")
+	}
+}
+
+var (
+	targetQuality = "high"
 )
 
 func main() {
@@ -18,6 +44,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer res.Body.Close()
-	io.Copy(os.Stdout, res.Body)
+	p, _, err := m3u8.DecodeFrom(res.Body, true)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for {
+		switch p := p.(type) {
+		case *m3u8.MasterPlaylist:
+			{
+				for _, variant := range p.Variants {
+					if variant.Video != targetQuality {
+						continue
+					}
+					fmt.Println(variant.Video)
+					getToSTDOUT(variant.URI)
+				}
+			}
+		default:
+			fmt.Println("wtf")
+		}
+		time.Sleep(time.Second * 5)
+	}
 }
