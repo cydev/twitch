@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strconv"
+	"time"
 )
 
 type HTTPClient interface {
@@ -32,6 +34,20 @@ type Token struct {
 	Body             string `json:"token"`
 	Sig              string `json:"sig"`
 	MobileRestricted bool   `json:"mobile_restricted"`
+}
+
+type Channel struct {
+	Links struct {
+		Self    string `json:"self"`
+		Channel string `json:"channel"`
+	} `json:"_links"`
+	Stream *Stream `json:"stream"`
+}
+
+type Stream struct {
+	ID        int64     `json:"_id"`
+	Game      string    `json:"game"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (tok Token) Values() (u url.Values) {
@@ -74,6 +90,32 @@ func (api TwitchAPI) Token(t TokenType, value string) (token Token, err error) {
 		return token, err
 	}
 	return token, nil
+}
+
+func (api TwitchAPI) Channel(name string) (channel Channel, err error) {
+	endpoint := filepath.Join("kraken", "streams", name)
+	u := api.URL(endpoint, nil)
+	res, err := api.httpClient.Do(mustGet(u))
+	if err != nil {
+		return channel, err
+	}
+	defer res.Body.Close()
+	decoder := json.NewDecoder(res.Body)
+	if err := decoder.Decode(&channel); err != nil {
+		return channel, err
+	}
+	return channel, nil
+}
+
+func (api TwitchAPI) IsLive(channelName string) (live bool, err error) {
+	c, err := api.Channel(channelName)
+	if err != nil {
+		return false, err
+	}
+	if c.Stream != nil {
+		live = true
+	}
+	return live, nil
 }
 
 func (api TwitchAPI) URL(endpoint string, params url.Values) (u *url.URL) {
