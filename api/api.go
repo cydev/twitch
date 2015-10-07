@@ -48,6 +48,10 @@ type Stream struct {
 	ID        int64     `json:"_id"`
 	Game      string    `json:"game"`
 	CreatedAt time.Time `json:"created_at"`
+	Data      struct {
+		Name   string `json:"display_name"`
+		Status string `json:"status"`
+	} `json:"channel"`
 }
 
 func (tok Token) Values() (u url.Values) {

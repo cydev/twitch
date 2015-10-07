@@ -1,13 +1,13 @@
 package main
 
 import (
+	"flag"
 	"net"
 	"net/http"
-	"os"
 	"time"
+	"log"
 
 	"github.com/cydev/twitch/downloader"
-	"log"
 )
 
 const (
@@ -34,9 +34,13 @@ func getDefaultHTTPClient() *http.Client {
 }
 
 func main() {
+	flag.Parse()
 	client := getDefaultHTTPClient()
-	streamName := os.Args[1]
-	log.Println("recording streamer", streamName)
+	if flag.NArg() < 1 {
+		log.Fatalln("no stream name specified")
+	}
+	streamName := flag.Arg(0)
+	log.Println("waiting for stream", streamName)
 	d := downloader.New(streamName, client)
 	d.Start()
 }

@@ -1,52 +1,27 @@
-package main
+package telegram
 
 import (
-    "log"
-    "github.com/Syfaro/telegram-bot-api"
-	"fmt"
-	"time"
+	"github.com/Syfaro/telegram-bot-api"
+	"log"
 )
 
-func main() {
-    bot, err := tgbotapi.NewBotAPI("")
-    if err != nil {
-        log.Panic(err)
-    }
+type Notifier struct {
+	api  *tgbotapi.BotAPI
+	chat int
+}
 
-    bot.Debug = true
+func New(token string, chat int) Notifier {
+	bot, err := tgbotapi.NewBotAPI(token)
+	if err != nil {
+		log.Println("unable to create bot:", err, token)
+		log.Print(err)
+		panic(err)
+	}
+	return Notifier{api: bot, chat: chat}
+}
 
-    log.Printf("Authorized on account %s", bot.Self.UserName)
-
-    u := tgbotapi.NewUpdate(0)
-    u.Timeout = 60
-
-    err = bot.UpdatesChan(u)
-    if err != nil {
-        log.Panic(err)
-    }
-
-	go func() {
-		ticker := time.NewTicker(time.Second * 3)
-		for t := range ticker.C {
-			msg := tgbotapi.NewMessage(1863832, t.String())
-			bot.SendMessage(msg)
-		}
-	}()
-
-    for update := range bot.Updates {
-        log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-
-        msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-//        msg.ReplyToMessageID = update.Message.MessageID
-		msg.Text = "Kek"
-
-        bot.SendMessage(msg)
-
-		msg = tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-		//        msg.ReplyToMessageID = update.Message.MessageID
-		msg.Text = "Pek"
-		fmt.Println("chat id", update.Message.Chat.ID)
-
-		bot.SendMessage(msg)
-    }
+func (n Notifier) Notify(message string) (err error) {
+	msg := tgbotapi.NewMessage(n.chat, message)
+	_, err = n.api.SendMessage(msg)
+	return err
 }

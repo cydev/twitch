@@ -1,33 +1,48 @@
 package downloader
 
 import (
+	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/cydev/twitch/api"
+	"github.com/cydev/twitch/telegram"
 	"github.com/golang/groupcache/lru"
 	"github.com/grafov/m3u8"
-	"github.com/syndtr/goleveldb/leveldb/errors"
 )
 
 const (
-	targetVideo     = "chunked"
-	checkInterval   = time.Second * 3
+	targetVideo      = "chunked"
+	checkInterval    = time.Second * 3
 	downloadInterval = time.Second * 8
-	maxCacheEntries = 128
+	maxCacheEntries  = 128
+
+	metadataExtension = "info"
 )
 
 var (
 	ErrStreamOffline       = errors.New("Stream offline")
 	ErrTargetVideoNotFound = errors.New("Target not found")
+	workdir                string
+	chatRoom int
+	telegramToken string
 )
+
+func init() {
+	flag.StringVar(&workdir, "dir", "", "Working directory")
+	flag.IntVar(&chatRoom, "chat", 1863832, "Telegram chat id")
+	flag.StringVar(&telegramToken, "telegram-token", "", "Token for telegram bot")
+}
 
 type HTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
@@ -50,10 +65,54 @@ type Downloader struct {
 	dir        string
 	channel    string
 	out        *os.File
+	fileName   string
+	active     bool
+	notifier   telegram.Notifier
+}
+
+type Metadata struct {
+	Title  string
+	Author string
+	Date   time.Time
+}
+
+func ReadMetadata(input io.Reader) (metadata Metadata, err error) {
+	decoder := json.NewDecoder(input)
+	return metadata, decoder.Decode(&metadata)
+}
+
+func WriteMetadata(output io.Writer, metadata Metadata) (err error) {
+	encoder := json.NewEncoder(output)
+	return encoder.Encode(metadata)
+}
+
+func GetMetadataFileName(fileName string) string {
+	return fmt.Sprintf("%s.%s", fileName, metadataExtension)
 }
 
 func getFileName(stream string, time time.Time) string {
 	return fmt.Sprintf("%s-%s.mp4", stream, time.Format("02-01-06"))
+}
+
+func (d Downloader) Notify(message string) {
+	if err := d.notifier.Notify(message); err != nil {
+		log.Println("notification failed:", err)
+	}
+}
+
+func (d Downloader) getMetadata() (metadata Metadata, err error) {
+	c, err := api.API.Channel(d.channel)
+	if err != nil {
+		return metadata, err
+	}
+	if c.Stream == nil {
+		return metadata, ErrStreamOffline
+	}
+	metadata.Date = c.Stream.CreatedAt
+	metadata.Author = c.Stream.Data.Name
+	metadata.Title = c.Stream.Data.Status
+
+	return metadata, nil
 }
 
 func (d Downloader) getStream() (stream Stream, err error) {
@@ -113,6 +172,7 @@ func (d *Downloader) prepareFile() error {
 	fileName := getFileName(d.channel, time.Now())
 	filePath := filepath.Join(d.dir, fileName)
 	log.Println("filepath:", filePath)
+	d.fileName = fileName
 	_, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
 		f, err := os.Create(filePath)
@@ -191,18 +251,63 @@ func (d Downloader) DownloadChunks(stream Stream) error {
 
 func (d *Downloader) Download(stream Stream) error {
 	log.Println("start of record")
+	d.Notify(fmt.Sprintf("Начата запись для канала %s", d.channel))
 	defer log.Println("end of record")
+	defer d.Notify(fmt.Sprintf("Запись для канала %s завершена", d.channel))
 	if err := d.prepareFile(); err != nil {
 		return err
 	}
 	defer d.out.Close()
 	ticker := time.NewTicker(downloadInterval)
+	d.active = true
+	defer func() {
+		d.active = false
+	}()
 	for _ = range ticker.C {
 		if err := d.DownloadChunks(stream); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (d *Downloader) writeMetadata(metadata Metadata) (err error) {
+	metadataPath := path.Join(d.dir, GetMetadataFileName(d.fileName))
+	log.Println("writing metadata to file:", metadataPath)
+	f, err := os.Create(metadataPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return WriteMetadata(f, metadata)
+}
+
+func (d *Downloader) metadataLoop() {
+	ticker := time.NewTicker(checkInterval)
+	var (
+		metadataSaved = false
+	)
+	for _ = range ticker.C {
+		if !d.active {
+			metadataSaved = false
+			continue
+		}
+		if metadataSaved {
+			continue
+		}
+		metadata, err := d.getMetadata()
+		if err == ErrStreamOffline {
+			continue
+		}
+		if err != nil {
+			log.Println("metatada get failed:", err)
+		}
+		if err := d.writeMetadata(metadata); err != nil {
+			log.Println("metadata write failed:", err)
+		} else {
+			metadataSaved = true
+		}
+	}
 }
 
 func (d *Downloader) loop() {
@@ -222,6 +327,7 @@ func (d *Downloader) loop() {
 }
 
 func (d *Downloader) Start() {
+	go d.metadataLoop()
 	d.loop()
 }
 
@@ -230,6 +336,11 @@ func New(name string, client HTTPClient) *Downloader {
 	d.channel = name
 	d.cache = lru.New(maxCacheEntries)
 	d.httpClient = client
+	d.dir = workdir
+	if len(telegramToken) == 0 {
+		log.Fatalln("no token provided")
+	}
+	d.notifier = telegram.New(telegramToken, chatRoom)
 
 	return d
 }
