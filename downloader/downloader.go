@@ -237,7 +237,7 @@ func (d Downloader) DownloadChunks(stream Stream) error {
 					continue
 				}
 				if err := d.DownloadChunk(chunkURL); err != nil {
-					log.Println("chunk download error", err)
+					d.notify("chunk download error", err)
 				} else {
 					d.cache.Add(chunkURL, nil)
 				}
@@ -310,6 +310,12 @@ func (d *Downloader) metadataLoop() {
 	}
 }
 
+func (d *Downloader) notify(v ...interface{}) {
+	s := fmt.Sprintln(v...)
+	log.Print(s)
+	d.Notify(s)
+})
+
 func (d *Downloader) loop() {
 	ticker := time.NewTicker(checkInterval)
 	for _ = range ticker.C {
@@ -318,10 +324,10 @@ func (d *Downloader) loop() {
 			continue
 		}
 		if err != nil {
-			log.Println("error", err)
+			d.notify("error", err)
 		}
 		if err := d.Download(stream); err != nil {
-			log.Println("download error", err)
+			d.notify("download error", err)
 		}
 	}
 }
