@@ -314,7 +314,7 @@ func (d *Downloader) notify(v ...interface{}) {
 	s := fmt.Sprintln(v...)
 	log.Print(s)
 	d.Notify(s)
-})
+}
 
 func (d *Downloader) loop() {
 	ticker := time.NewTicker(checkInterval)
