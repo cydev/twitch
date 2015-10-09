@@ -21,7 +21,7 @@ type Video struct {
 }
 
 func (_ Video) metaArg(k, v string) string {
-	return fmt.Sprintf(`%s="%s"`, k, v)
+	return fmt.Sprintf(`%s=%s`, k, v)
 }
 
 var (

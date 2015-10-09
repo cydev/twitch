@@ -325,6 +325,7 @@ func (d *Downloader) loop() {
 		}
 		if err != nil {
 			d.notify("error", err)
+			continue
 		}
 		if err := d.Download(stream); err != nil {
 			d.notify("download error", err)
