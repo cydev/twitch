@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	defaultHTTPTimeout        = 30 * time.Second
-	defaultRequestTimeout     = 30 * time.Second
-	defaultKeepAliveInterval  = 60 * time.Second
+	defaultHTTPTimeout        = 15 * time.Second
+	defaultRequestTimeout     = 15 * time.Second
+	defaultKeepAliveInterval  = 30 * time.Second
 	defaultHTTPHeadersTimeout = defaultRequestTimeout
 )
 

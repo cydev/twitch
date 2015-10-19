@@ -22,10 +22,12 @@ import (
 )
 
 const (
-	targetVideo      = "chunked"
-	checkInterval    = time.Second * 3
-	downloadInterval = time.Second * 8
-	maxCacheEntries  = 128
+	targetVideo          = "chunked"
+	checkInterval        = time.Second * 8
+	downloadInterval     = time.Second * 8
+	notificationInterval = time.Hour
+	maxCacheEntries      = 128
+	maxErrors = 3
 
 	metadataExtension = "info"
 )
@@ -34,8 +36,8 @@ var (
 	ErrStreamOffline       = errors.New("Stream offline")
 	ErrTargetVideoNotFound = errors.New("Target not found")
 	workdir                string
-	chatRoom int
-	telegramToken string
+	chatRoom               int
+	telegramToken          string
 )
 
 func init() {
@@ -68,6 +70,7 @@ type Downloader struct {
 	fileName   string
 	active     bool
 	notifier   telegram.Notifier
+	started    time.Time
 }
 
 type Metadata struct {
@@ -249,19 +252,40 @@ func (d Downloader) DownloadChunks(stream Stream) error {
 	return nil
 }
 
+func (d *Downloader) notifyLoop() {
+	ticker := time.NewTicker(time.Second)
+	var (
+		lastNotified time.Time
+	)
+	for t := range ticker.C {
+		if !d.active {
+			return
+		}
+		duration := t.Sub(d.started)
+		if t.Sub(lastNotified) < notificationInterval {
+			continue
+		}
+		d.Notify(fmt.Sprintf("Идет запись канала %s; Продолжительность: %s", d.channel, duration))
+		lastNotified = t
+	}
+}
+
 func (d *Downloader) Download(stream Stream) error {
 	log.Println("start of record")
 	d.Notify(fmt.Sprintf("Начата запись для канала %s", d.channel))
 	defer log.Println("end of record")
-	defer d.Notify(fmt.Sprintf("Запись для канала %s завершена", d.channel))
 	if err := d.prepareFile(); err != nil {
 		return err
 	}
 	defer d.out.Close()
 	ticker := time.NewTicker(downloadInterval)
 	d.active = true
+	d.started = time.Now()
 	defer func() {
 		d.active = false
+		duration := time.Now().Sub(d.started)
+		d.started = time.Time{}
+		d.Notify(fmt.Sprintf("Запись для канала %s завершена; Продолжительность: %s", d.channel, duration))
 	}()
 	for _ = range ticker.C {
 		if err := d.DownloadChunks(stream); err != nil {
@@ -318,23 +342,41 @@ func (d *Downloader) notify(v ...interface{}) {
 
 func (d *Downloader) loop() {
 	ticker := time.NewTicker(checkInterval)
+	var (
+		errorCount int
+		lastError error
+	)
 	for _ = range ticker.C {
+		if errorCount > maxErrors {
+			d.notify("error", lastError)
+			errorCount = 0
+		}
 		stream, err := d.getStream()
 		if err == ErrStreamOffline {
+			errorCount = 0
+			lastError = ErrStreamOffline
 			continue
 		}
 		if err != nil {
-			d.notify("error", err)
+			errorCount++
+			lastError = err
 			continue
 		}
 		if err := d.Download(stream); err != nil {
-			d.notify("download error", err)
+			if strings.HasPrefix(err.Error(), "#EXT3MU absent") {
+				continue
+			}
+			lastError = err
+			errorCount++
+		} else {
+			errorCount = 0
 		}
 	}
 }
 
 func (d *Downloader) Start() {
 	go d.metadataLoop()
+	go d.notifyLoop()
 	d.loop()
 }
 
@@ -348,6 +390,15 @@ func New(name string, client HTTPClient) *Downloader {
 		log.Fatalln("no token provided")
 	}
 	d.notifier = telegram.New(telegramToken, chatRoom)
+	d.notifier.Handle("/status", func(event string, args []string, chat int) {
+		log.Println("got status request", event, args, chat)
+		if !d.active {
+			d.notifier.Notify("Запись не ведется")
+		} else {
+			d.notifier.Notify(fmt.Sprintf("Записываю уже %s", time.Now().Sub(d.started)))
+		}
+
+	})
 
 	return d
 }
