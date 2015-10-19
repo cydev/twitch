@@ -2,10 +2,10 @@ package main
 
 import (
 	"flag"
+	"log"
 	"net"
 	"net/http"
 	"time"
-	"log"
 
 	"github.com/cydev/twitch/downloader"
 )

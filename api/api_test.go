@@ -3,12 +3,13 @@ package api
 import (
 	"testing"
 
-	. "github.com/smartystreets/goconvey/convey"
+	"bytes"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
-	"bytes"
-	"io/ioutil"
-	"io"
+
+	. "github.com/smartystreets/goconvey/convey"
 )
 
 func TestToken(t *testing.T) {
@@ -46,7 +47,7 @@ func jsonResponse(body string, code int) (res *http.Response) {
 
 func TestAPI(t *testing.T) {
 	Convey("API", t, func() {
-		Convey("OK", func(){
+		Convey("OK", func() {
 			m := &MockHTTPClient{}
 			m.response = jsonResponse(`{"token": "{\"a\": \"b\"}", "sig": "abcdef"}`, http.StatusOK)
 			client := TwitchAPI{httpClient: m}

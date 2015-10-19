@@ -27,7 +27,7 @@ const (
 	downloadInterval     = time.Second * 8
 	notificationInterval = time.Hour
 	maxCacheEntries      = 128
-	maxErrors = 3
+	maxErrors            = 3
 
 	metadataExtension = "info"
 )
@@ -344,7 +344,7 @@ func (d *Downloader) loop() {
 	ticker := time.NewTicker(checkInterval)
 	var (
 		errorCount int
-		lastError error
+		lastError  error
 	)
 	for _ = range ticker.C {
 		if errorCount > maxErrors {

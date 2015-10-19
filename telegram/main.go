@@ -1,16 +1,17 @@
 package telegram
 
 import (
-	"github.com/Syfaro/telegram-bot-api"
 	"log"
 	"strings"
+
+	"github.com/Syfaro/telegram-bot-api"
 )
 
 type Callback func(event string, args []string, chat int)
 
 type Notifier struct {
-	api  *tgbotapi.BotAPI
-	chat int
+	api       *tgbotapi.BotAPI
+	chat      int
 	callbacks map[string][]Callback
 }
 
