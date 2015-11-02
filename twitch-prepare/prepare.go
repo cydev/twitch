@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -110,26 +111,17 @@ func (v *Video) Prepare() error {
 	return cmd.Run()
 }
 
-func main() {
-	fmt.Println("cydev/twitch-prepare")
-	if len(os.Args) < 2 {
-		log.Fatalln("not file specified")
-	}
-	filename := os.Args[1]
-	fmt.Println("processing file", filename)
-	_, err := os.Stat(filename)
-	if err != nil {
-		log.Fatalln("file open error", err)
-	}
-
+func prepare(filename string) error {
+	var metadata downloader.Metadata
 	metadataFile, err := os.Open(downloader.GetMetadataFileName(filename))
 	if err != nil {
-		log.Fatalln("unable to open metadata", err)
-	}
-	defer metadataFile.Close()
-	metadata, err := downloader.ReadMetadata(metadataFile)
-	if err != nil {
-		log.Fatalln("unable to read metadata:", err)
+		log.Println("unable to open metadata", err)
+	} else {
+		defer metadataFile.Close()
+		metadata, err = downloader.ReadMetadata(metadataFile)
+		if err != nil {
+			log.Println("no metadata found for", filename)
+		}
 	}
 	video := Video{
 		Meta:     metadata,
@@ -137,8 +129,45 @@ func main() {
 	}
 	if err := video.Prepare(); err != nil {
 		log.Fatalln("prepare failed:", err)
+		return err
 	}
 	if err := video.createTorrent(); err != nil {
 		log.Fatalln("torrent creation failed:", err)
+		return err
+	}
+	return os.Rename(filename, fmt.Sprintf("%s.old", filename))
+}
+
+func main() {
+	fmt.Println("cydev/twitch-prepare")
+	if len(os.Args) != 2 {
+		return
+	}
+	name := os.Args[1]
+	stat, err := os.Stat(name)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !stat.IsDir() {
+		prepare(name)
+		return
+	}
+	fmt.Println("processing all files in", name)
+	files, err := ioutil.ReadDir(name)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		if strings.Contains(f.Name(), "-stream.mp4") {
+			continue
+		}
+		if !strings.HasSuffix(f.Name(), "mp4") {
+			continue
+		}
+		fmt.Println(f.Name())
+		prepare(f.Name())
 	}
 }
